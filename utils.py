@@ -43,7 +43,54 @@ VERIFY = "EFGH"
 ABCD = "ABCD"
 
 
-def gen_random_circuits(
+def linear_xeb_between_statevector(
+        statevector1: np.ndarray,
+        statevector2: np.ndarray,
+) -> float:
+    """Calculate the XEB fidelity between two statevectors."""
+    probs1 = np.abs(statevector1) ** 2
+    probs2 = np.abs(statevector2) ** 2
+    return len(statevector1) * (np.vdot(probs1, probs2)) - 1
+
+
+def simulate_statevector(
+        circuit: cirq.Circuit,
+        cycles: Iterable[int],
+        sampler: Optional[cirq.Sampler] = None,
+) -> List[np.ndarray]:
+    """Simulate the statevector of a circuit at different depths."""
+    if 2 * max(cycles) + 1 > len(circuit):
+        raise ValueError("Circuit is too short to simulate to the desired depth.")
+    sampler = sampler or cirq.Simulator()
+    return [sampler.simulate(circuit[:2 * cycle + 1]).final_state_vector for cycle in cycles]
+
+
+def inject_noise(
+        circuit: cirq.Circuit,
+        noise_amplitude: float,
+) -> cirq.Circuit:
+    """Inject noise into a circuit."""
+    depth = (len(circuit) - 1) // 2
+    qubits = list(circuit.all_qubits())
+    n_qubits = len(qubits)
+
+    noisy_moments = []
+    for d in range(depth):
+        noisy_moments.append(circuit[2 * d])
+        random_a = np.random.normal(loc=-1, scale=1, size=n_qubits)
+        random_x = np.random.normal(loc=0, scale=noise_amplitude, size=n_qubits)
+        random_z = np.random.normal(loc=0, scale=noise_amplitude, size=n_qubits)
+        noise_moment = cirq.Moment(
+            cirq.PhasedXZGate(x_exponent=random_x[i], z_exponent=random_z[i], axis_phase_exponent=random_a[i])(qubits[i])
+            for i in range(n_qubits)
+        )
+        noisy_moments.append(noise_moment)
+        noisy_moments.append(circuit[2 * d + 1])
+    noisy_moments.append(circuit[-1])
+    return cirq.Circuit(noisy_moments)
+
+
+def gen_random_circuits_without_measurements(
         qubits: Iterable[cirq.GridQubit],
         *,
         depth: int,
