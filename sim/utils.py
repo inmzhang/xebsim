@@ -1,4 +1,4 @@
-from typing import Iterable, Optional, Tuple, Callable, Sequence, List, Dict
+from typing import Iterable, Optional, Tuple, Callable, Sequence, List, Dict, Literal
 import itertools
 
 import cirq
@@ -11,6 +11,20 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats, optimize
+
+
+def memory_usage_estimate_gb(n_qubits: int, method: Literal['density_matrix', 'state_vector']) -> float:
+    base = 2 if method == 'state_vector' else 4
+    # f32 complex number
+    return 8 * (base ** n_qubits) / (1024 ** 3)
+
+
+def max_simulate_n_estimate(
+        memory_limit_gb: float,
+        method: Literal['density_matrix', 'state_vector']
+) -> int:
+    divide = 1 if method == 'state_vector' else 2
+    return np.floor(np.log2(memory_limit_gb * (1024 ** 3) / 8) / divide).item()
 
 
 def _default_fsim_factory(a: cirq.GridQubit, b: cirq.GridQubit, _) -> cirq.OP_TREE:
@@ -43,6 +57,14 @@ PATTERN_MAP: Dict[str, GridInteractionLayer] = {
 SUPREMACY = "ABCDCDAB"
 VERIFY = "EFGH"
 ABCD = "ABCD"
+
+
+def linear_xeb_between_probvectors(
+        prob1: np.ndarray,
+        prob2: np.ndarray,
+        dim: int,
+) -> float:
+    return dim * np.vdot(prob1, prob2).item() - 1
 
 
 def exponential_decay(cycle_depths: np.ndarray, a: float, layer_fid: float) -> np.ndarray:
@@ -132,18 +154,6 @@ def fit_exponential_decays(fidelities_df: pd.DataFrame) -> pd.DataFrame:
         return pd.Series(record)
 
     return fidelities_df.groupby('qubit').apply(_per_noise)
-
-
-def simulate_statevector(
-        circuit: cirq.Circuit,
-        cycles: Iterable[int],
-        sampler: Optional[cirq.Sampler] = None,
-) -> List[np.ndarray]:
-    """Simulate the statevector of a circuit at different depths."""
-    if 2 * max(cycles) + 1 > len(circuit):
-        raise ValueError("Circuit is too short to simulate to the desired depth.")
-    sampler = sampler or cirq.Simulator()
-    return [sampler.simulate(circuit[:2 * cycle + 1]).final_state_vector for cycle in cycles]
 
 
 def gen_random_circuits_without_measurements(
