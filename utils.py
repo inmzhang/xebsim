@@ -2,6 +2,7 @@ from typing import Iterable, Optional, Tuple, Callable, Sequence, List, Dict
 import itertools
 
 import cirq
+import pandas as pd
 from cirq.experiments import (
     GridInteractionLayer,
     random_rotations_between_grid_interaction_layers_circuit
@@ -9,6 +10,7 @@ from cirq.experiments import (
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy import stats, optimize
 
 
 def _default_fsim_factory(a: cirq.GridQubit, b: cirq.GridQubit, _) -> cirq.OP_TREE:
@@ -43,14 +45,93 @@ VERIFY = "EFGH"
 ABCD = "ABCD"
 
 
-def linear_xeb_between_statevector(
-        statevector1: np.ndarray,
-        statevector2: np.ndarray,
-) -> float:
-    """Calculate the XEB fidelity between two statevectors."""
-    probs1 = np.abs(statevector1) ** 2
-    probs2 = np.abs(statevector2) ** 2
-    return len(statevector1) * (np.vdot(probs1, probs2)) - 1
+def exponential_decay(cycle_depths: np.ndarray, a: float, layer_fid: float) -> np.ndarray:
+    """An exponential decay for fitting.
+
+    This computes `a * layer_fid**cycle_depths`
+
+    Args:
+        cycle_depths: The various depths at which fidelity was estimated. This is the independent
+            variable in the exponential function.
+        a: A scale parameter in the exponential function.
+        layer_fid: The base of the exponent in the exponential function.
+    """
+    return a * layer_fid**cycle_depths
+
+
+def _fit_exponential_decay(
+        cycle_depths: np.ndarray,
+        fidelities: np.ndarray
+) -> Tuple[float, float, float, float]:
+    """Fit an exponential model fidelity = a * layer_fid**x using nonlinear least squares.
+
+    This uses `exponential_decay` as the function to fit with parameters `a` and `layer_fid`.
+
+    Args:
+        cycle_depths: The various depths at which fidelity was estimated. Each element is `x`
+            in the fit expression.
+        fidelities: The estimated fidelities for each cycle depth. Each element is `fidelity`
+            in the fit expression.
+
+    Returns:
+        a: The first fit parameter that scales the exponential function, perhaps accounting for
+            state prep and measurement (SPAM) error.
+        layer_fid: The second fit parameters which serves as the base of the exponential.
+        a_std: The standard deviation of the `a` parameter estimate.
+        layer_fid_std: The standard deviation of the `layer_fid` parameter estimate.
+    """
+    cycle_depths = np.asarray(cycle_depths)
+    fidelities = np.asarray(fidelities)
+
+    # Get initial guess by linear least squares with logarithm of model.
+    # This only works for positive fidelities. We use numpy fancy indexing
+    # with `positives` (an ndarray of bools).
+    positives = fidelities > 0
+    if np.sum(positives) <= 1:
+        # The sum of the boolean array is the number of `True` entries.
+        # For one or fewer positive values, we cannot perform the linear fit.
+        return 0, 0, np.inf, np.inf
+    cycle_depths_pos = cycle_depths[positives]
+    log_fidelities = np.log(fidelities[positives])
+
+    slope, intercept, _, _, _ = stats.linregress(cycle_depths_pos, log_fidelities)
+    layer_fid_0 = np.clip(np.exp(slope), 0, 1)
+    a_0 = np.clip(np.exp(intercept), 0, 1)
+
+    try:
+        (a, layer_fid), pcov = optimize.curve_fit(
+            exponential_decay,
+            cycle_depths,
+            fidelities,
+            p0=(a_0, layer_fid_0),
+            bounds=((0, 0), (1, 1)),
+        )
+    except ValueError:  # coverage: ignore
+        # coverage: ignore
+        return 0, 0, np.inf, np.inf
+
+    a_std, layer_fid_std = np.sqrt(np.diag(pcov))
+    return a, layer_fid, a_std, layer_fid_std
+
+
+def fit_exponential_decays(fidelities_df: pd.DataFrame) -> pd.DataFrame:
+    """Fit exponential decay curves to a fidelities DataFrame. """
+
+    def _per_noise(f1):
+        a, layer_fid, a_std, layer_fid_std = _fit_exponential_decay(
+            f1['cycle_depth'], f1['fidelity']
+        )
+        record = {
+            'a': a,
+            'layer_fid': layer_fid,
+            'cycle_depths': f1['cycle_depth'].values,
+            'fidelities': f1['fidelity'].values,
+            'a_std': a_std,
+            'layer_fid_std': layer_fid_std,
+        }
+        return pd.Series(record)
+
+    return fidelities_df.groupby('qubit').apply(_per_noise)
 
 
 def simulate_statevector(
@@ -63,31 +144,6 @@ def simulate_statevector(
         raise ValueError("Circuit is too short to simulate to the desired depth.")
     sampler = sampler or cirq.Simulator()
     return [sampler.simulate(circuit[:2 * cycle + 1]).final_state_vector for cycle in cycles]
-
-
-def inject_noise(
-        circuit: cirq.Circuit,
-        noise_amplitude: float,
-) -> cirq.Circuit:
-    """Inject noise into a circuit."""
-    depth = (len(circuit) - 1) // 2
-    qubits = list(circuit.all_qubits())
-    n_qubits = len(qubits)
-
-    noisy_moments = []
-    for d in range(depth):
-        noisy_moments.append(circuit[2 * d])
-        random_a = np.random.normal(loc=-1, scale=1, size=n_qubits)
-        random_x = np.random.normal(loc=0, scale=noise_amplitude, size=n_qubits)
-        random_z = np.random.normal(loc=0, scale=noise_amplitude, size=n_qubits)
-        noise_moment = cirq.Moment(
-            cirq.PhasedXZGate(x_exponent=random_x[i], z_exponent=random_z[i], axis_phase_exponent=random_a[i])(qubits[i])
-            for i in range(n_qubits)
-        )
-        noisy_moments.append(noise_moment)
-        noisy_moments.append(circuit[2 * d + 1])
-    noisy_moments.append(circuit[-1])
-    return cirq.Circuit(noisy_moments)
 
 
 def gen_random_circuits_without_measurements(
