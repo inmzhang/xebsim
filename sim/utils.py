@@ -1,17 +1,24 @@
-from typing import Iterable, Optional, Tuple, Callable, Sequence, List, Dict, Literal
-import itertools
+from typing import Iterable, Optional, Tuple, Callable, Dict, Literal
 
 import cirq
 import pandas as pd
-from cirq.experiments import (
-    GridInteractionLayer,
-    random_rotations_between_grid_interaction_layers_circuit
-)
+from cirq.experiments import GridInteractionLayer
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats, optimize
 
+
+PATTERN_MAP: Dict[str, GridInteractionLayer] = {
+    "A": GridInteractionLayer(col_offset=0, vertical=True, stagger=True),
+    "B": GridInteractionLayer(col_offset=1, vertical=True, stagger=True),
+    "C": GridInteractionLayer(col_offset=1, vertical=False, stagger=True),
+    "D": GridInteractionLayer(col_offset=0, vertical=False, stagger=True),
+    "E": GridInteractionLayer(col_offset=0, vertical=False, stagger=False),
+    "F": GridInteractionLayer(col_offset=1, vertical=False, stagger=False),
+    "G": GridInteractionLayer(col_offset=0, vertical=True, stagger=False),
+    "H": GridInteractionLayer(col_offset=1, vertical=True, stagger=False),
+}
 
 def memory_usage_estimate_gb(n_qubits: int, method: Literal['density_matrix', 'state_vector']) -> float:
     base = 2 if method == 'state_vector' else 4
@@ -27,11 +34,6 @@ def max_simulate_n_estimate(
     return np.floor(np.log2(memory_limit_gb * (1024 ** 3) / 8) / divide).item()
 
 
-def _default_fsim_factory(a: cirq.GridQubit, b: cirq.GridQubit, _) -> cirq.OP_TREE:
-    """Default two-qubit gate factory."""
-    return cirq.FSimGate(theta=np.pi/2, phi=np.pi/6)(a, b)
-
-
 TWO_QUBIT_GATE_FACTORIES_T = Callable[[cirq.GridQubit, cirq.GridQubit, np.random.RandomState], cirq.OP_TREE]
 
 
@@ -42,21 +44,12 @@ DEFAULT_SINGLE_QUBIT_GATES = (
 )
 
 
-PATTERN_MAP: Dict[str, GridInteractionLayer] = {
-    "A": GridInteractionLayer(col_offset=0, vertical=True, stagger=True),
-    "B": GridInteractionLayer(col_offset=1, vertical=True, stagger=True),
-    "C": GridInteractionLayer(col_offset=1, vertical=False, stagger=True),
-    "D": GridInteractionLayer(col_offset=0, vertical=False, stagger=True),
-    "E": GridInteractionLayer(col_offset=0, vertical=False, stagger=False),
-    "F": GridInteractionLayer(col_offset=1, vertical=False, stagger=False),
-    "G": GridInteractionLayer(col_offset=0, vertical=True, stagger=False),
-    "H": GridInteractionLayer(col_offset=1, vertical=True, stagger=False),
-}
+def linear_xeb_estimate(amps: np.ndarray, dim: int) -> float:
+    return dim * np.mean(amps) - 1
 
 
-SUPREMACY = "ABCDCDAB"
-VERIFY = "EFGH"
-ABCD = "ABCD"
+def linear_xeb_std_err_estimate(amps: np.ndarray, dim: int) -> float:
+    return dim * np.sqrt(np.var(amps) / len(amps))
 
 
 def linear_xeb_between_probvectors(
@@ -156,35 +149,6 @@ def fit_exponential_decays(fidelities_df: pd.DataFrame) -> pd.DataFrame:
     return fidelities_df.groupby('qubit').apply(_per_noise)
 
 
-def gen_random_circuits_without_measurements(
-        qubits: Iterable[cirq.GridQubit],
-        *,
-        depth: int,
-        num_circuits: int,
-        two_qubit_op_factory: TWO_QUBIT_GATE_FACTORIES_T = _default_fsim_factory,
-        pattern: str = SUPREMACY,
-        single_qubit_gates: Sequence['cirq.Gate'] = DEFAULT_SINGLE_QUBIT_GATES,
-        add_final_single_qubit_layer: bool = True,
-        seed: 'cirq.RANDOM_STATE_OR_SEED_LIKE' = None,
-) -> Tuple[List[cirq.Circuit], str]:
-    """Generate supremacy-style random circuits for sampling."""
-    layer_pattern = [PATTERN_MAP[p] for p in pattern]
-    random_state = cirq.value.parse_random_state(seed)
-    circuits = [
-        random_rotations_between_grid_interaction_layers_circuit(
-            qubits,
-            depth=depth,
-            two_qubit_op_factory=two_qubit_op_factory,
-            pattern=layer_pattern,
-            single_qubit_gates=single_qubit_gates,
-            add_final_single_qubit_layer=add_final_single_qubit_layer,
-            seed=random_state
-        )
-        for _ in range(num_circuits)
-    ]
-    return circuits, "".join(itertools.islice(itertools.cycle(list(pattern)), num_circuits))
-
-
 def plot_grid_interaction_layers(
         layers: str,
         qubits: Iterable[cirq.GridQubit],
@@ -230,3 +194,4 @@ def plot_grid_interaction_layers(
 def _edge_in_layer(edge: Tuple[Tuple[int, int], Tuple[int, int]], layer: GridInteractionLayer) -> bool:
     """Check if the coupler is active in the layer."""
     return (cirq.GridQubit(edge[0][1], edge[0][0]), cirq.GridQubit(edge[1][1], edge[1][0])) in layer
+
