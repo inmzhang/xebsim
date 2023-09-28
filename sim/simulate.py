@@ -109,7 +109,7 @@ def large_scale_xeb_sim(
             total=len(circuit),
             desc=f"{n} qubits noisy state simulation"
     ):
-        noisy_step_results.append(np.abs(np.diag(res.density_matrix(copy=False))))
+        noisy_step_results.append(np.abs(np.diag(res.density_matrix())))
 
     xeb_results = []
     for cycle_depth in sorted(cycle_depths):
@@ -191,34 +191,5 @@ def large_scale_xeb_sim_qsim(
         results.append(res)
         with open(save_resume_filepath, 'a') as f:
             print(res.csv_line(), file=f, flush=True)
-        # print(f"Finish size {len(qubits)}, depth {cycle_depth}, linear xeb = {xeb}, use {(end - start) / shots}s per noisy shot")
 
     return results
-
-        
-    # return pure_step_results
-    
-
-    # for res in tqdm.tqdm(
-    #         pure_sim.simulate(circuit),
-    #         total=len(circuit),
-    #         desc=f"{n} qubits pure state simulation"
-    # ):
-    #     pure_step_results.append(np.abs(res.state_vector()) ** 2)
-
-    # noisy_step_results = []
-    # for res in tqdm.tqdm(
-    #         noisy_sim.simulate_moment_steps(circuit),
-    #         total=len(circuit),
-    #         desc=f"{n} qubits noisy state simulation"
-    # ):
-    #     noisy_step_results.append(np.abs(np.diag(res.density_matrix())))
-
-    # xeb_results = []
-    # for cycle_depth in sorted(cycle_depths):
-    #     circuit_depth = cycle_to_circuit_depth_func(cycle_depth)
-    #     assert circuit_depth <= len(circuit)
-    #     pure_probs = pure_step_results[circuit_depth - 1]
-    #     noisy_probs = noisy_step_results[circuit_depth - 1]
-    #     xeb_results.append(linear_xeb_between_probvectors(pure_probs, noisy_probs, dim))
-    # return xeb_results
