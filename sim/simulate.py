@@ -9,7 +9,6 @@ import tqdm
 import numpy as np
 import cirq
 import pandas as pd
-import qsimcirq
 
 from sim.utils import fit_exponential_decays, linear_xeb_between_probvectors, linear_xeb_estimate, linear_xeb_std_err_estimate
 from sim.result import SampleResult
@@ -87,6 +86,7 @@ def large_scale_xeb_sim(
         *,
         cycle_depths: Sequence[int],
         cycle_to_circuit_depth_func: Callable[[int], int] = lambda x: 2 * x + 1,
+        normalize: bool = False,
 ) -> List[float]:
     n = len(circuit.all_qubits())
 
@@ -117,7 +117,11 @@ def large_scale_xeb_sim(
         assert circuit_depth <= len(circuit)
         pure_probs = pure_step_results[circuit_depth - 1]
         noisy_probs = noisy_step_results[circuit_depth - 1]
-        xeb_results.append(linear_xeb_between_probvectors(pure_probs, noisy_probs, dim))
+        normalizer = linear_xeb_between_probvectors(pure_probs, pure_probs, dim)
+        xeb = linear_xeb_between_probvectors(pure_probs, noisy_probs, dim)
+        if normalize:
+            xeb = xeb / normalizer
+        xeb_results.append(xeb)
     return xeb_results
 
 
@@ -131,6 +135,7 @@ def large_scale_xeb_sim_qsim(
         shots: int = 10_000,
         save_resume_filepath: Union[str, pathlib.Path]
 ) -> List[SampleResult]:
+    import qsimcirq
     qubits = sorted(circuit.all_qubits())
     circuit_id = uuid.uuid4()
     circuit_filepath = f"/home/cuquantum/xebsim/result/circuits/{circuit_id}"
