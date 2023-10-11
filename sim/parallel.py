@@ -1,9 +1,7 @@
 import itertools
-import sys
 
 import cirq
 import numpy as np
-import matplotlib.pyplot as plt
 
 from sim.circuit import gen_1d_chain_xeb_random_circuit
 from sim.simulate import large_scale_xeb_sim
@@ -16,7 +14,7 @@ SINGLE_QUBIT_GATES = tuple(
 
 MAX_DEPTH = 200
 N = 10
-n_circuits = 10
+n_circuits = 5
 
 qubits = cirq.LineQubit.range(N)
 circuits = [gen_1d_chain_xeb_random_circuit
