@@ -9,7 +9,7 @@ from sim.parallel import run
 
 
 def main():
-    e_paulis = np.linspace(0.5e-3, 1e-2, 8)
+    e_paulis = np.linspace(0.5e-3, 1e-2, 2)
 
     pool = multiprocessing.Pool(7)
 
@@ -28,7 +28,7 @@ def main():
     #     xeb_ratios[e_pauli] = np.log(ratio)
         
     with open("result/1d_n10_slope_circuit10.json", 'w') as f:
-        json.dump({e: xeb for e, xeb in res}, f)
+        json.dump({e: xeb.tolist() for e, xeb in res}, f)
 
 if __name__ == "__main__":
     main()

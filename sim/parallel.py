@@ -14,7 +14,7 @@ SINGLE_QUBIT_GATES = tuple(
 
 MAX_DEPTH = 200
 N = 10
-n_circuits = 5
+n_circuits = 2
 
 qubits = cirq.LineQubit.range(N)
 circuits = [gen_1d_chain_xeb_random_circuit
