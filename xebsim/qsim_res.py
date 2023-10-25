@@ -53,12 +53,11 @@ def read_results_from_file(file: Union[str, pathlib.Path]) -> List[SampleResult]
                 time_per_shot_sec=_load_nullable_value(row['time_per_shot_sec'], float),
             ))
     return results
-            
-            
+
+
 def _load_nullable_value(value, type_factory=None):
     if value == 'None':
         return None
     if type_factory:
         return type_factory(value)
     return value
-    

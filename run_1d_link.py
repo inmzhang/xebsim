@@ -1,20 +1,10 @@
-import itertools
 import collections
 
 import cirq
 import numpy as np
-import sys
 import matplotlib.pyplot as plt
-sys.path.append("..")
 
-from sim.circuit import gen_1d_chain_weak_link_random_circuit
-from sim.simulate import large_scale_xeb_sim
-
-exponents = np.linspace(0, 7/4, 8)
-SINGLE_QUBIT_GATES = tuple(
-    cirq.PhasedXZGate(x_exponent=0.5, z_exponent=z, axis_phase_exponent=a)
-    for a, z in itertools.product(exponents, repeat=2)
-)
+import xebsim
 
 MAX_DEPTH = 200
 
@@ -25,13 +15,13 @@ n_circuits = 5
 
 for link_freq, cycle_depths in zip(link_freqs, cycles):
     qubits = cirq.LineQubit.range(N)
-    circuits = [gen_1d_chain_weak_link_random_circuit
-        (
+    circuits = [
+        xebsim.gen_1d_chain_weak_link_rqc(
             qubits,
             depth=MAX_DEPTH,
             link_frequency=link_freq,
-            single_qubit_gates=SINGLE_QUBIT_GATES,
-            two_qubit_op_factory=lambda a, b, _: cirq.SQRT_ISWAP(a, b)
+            single_qubit_gates=xebsim.phasedxz_gateset(),
+            two_qubit_gate=cirq.SQRT_ISWAP,
         )
         for _ in range(n_circuits)
     ]
@@ -44,7 +34,7 @@ for link_freq, cycle_depths in zip(link_freqs, cycles):
         noise_model = cirq.devices.noise_model.ConstantQubitNoiseModel(cirq.depolarize(e_pauli))
         
         xebs = np.mean([
-            large_scale_xeb_sim(circuit, noise_model, cycle_depths=cycle_depths)
+            xebsim.density_matrix_simulation(circuit, noise_model, cycle_depths=cycle_depths)
             for circuit in circuits
         ], axis=0)
         for i, d in enumerate(cycle_depths):
